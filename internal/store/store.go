@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -34,13 +35,27 @@ type Store struct{ dir string }
 
 func New(dir string) *Store { return &Store{dir: dir} }
 
-// DefaultDir returns the directory of the running executable.
+// DefaultDir returns where ytcli keeps its text lists. On Windows that is the
+// directory of the running executable (self-contained, as originally designed);
+// elsewhere it is $XDG_CONFIG_HOME/ytcli (o ~/.config/ytcli), which se crea si
+// no existe, para no ensuciar el directorio del binario (p.ej. ~/.local/bin).
 func DefaultDir() (string, error) {
-	exe, err := os.Executable()
+	if runtime.GOOS == "windows" {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Dir(exe), nil
+	}
+	cfg, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Dir(exe), nil
+	dir := filepath.Join(cfg, "ytcli")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func (s *Store) path(name string) string { return filepath.Join(s.dir, name) }

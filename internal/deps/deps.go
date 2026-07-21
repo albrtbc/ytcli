@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"time"
 )
 
@@ -28,13 +29,31 @@ const (
 // httpClient bounds how long a stalled download can hang.
 var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
-// BinDir returns %LOCALAPPDATA%\ytcli\bin.
+// BinDir returns the directory where ytcli keeps auto-downloaded dependencies:
+// %LOCALAPPDATA%\ytcli\bin on Windows, else $XDG_CACHE_HOME/ytcli/bin (o
+// ~/.cache/ytcli/bin). En Linux/macOS mpv y yt-dlp suelen estar en el PATH, así
+// que este directorio solo actúa de reserva y rara vez llega a usarse.
 func BinDir() (string, error) {
-	base := os.Getenv("LOCALAPPDATA")
-	if base == "" {
-		return "", errors.New("LOCALAPPDATA no está definido")
+	if runtime.GOOS == "windows" {
+		base := os.Getenv("LOCALAPPDATA")
+		if base == "" {
+			return "", errors.New("LOCALAPPDATA no está definido")
+		}
+		return filepath.Join(base, "ytcli", "bin"), nil
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(base, "ytcli", "bin"), nil
+}
+
+// exeName appends the platform executable suffix (".exe" only on Windows).
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func fileExists(p string) bool {
@@ -49,7 +68,7 @@ func resolveBinary(name, binDir string,
 	if p, err := lookPath(name); err == nil {
 		return p, true
 	}
-	cand := filepath.Join(binDir, name+".exe")
+	cand := filepath.Join(binDir, exeName(name))
 	if exists(cand) {
 		return cand, true
 	}

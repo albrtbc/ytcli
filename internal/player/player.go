@@ -1,5 +1,6 @@
-// Package player runs an mpv process and drives it over mpv's JSON IPC on a
-// Windows named pipe. Audio only; mpv resolves YouTube via yt-dlp internally.
+// Package player runs an mpv process and drives it over mpv's JSON IPC. The
+// transport is OS-specific — a Windows named pipe or a Unix domain socket, see
+// ipc_windows.go / ipc_unix.go. Audio only; mpv resolves YouTube via yt-dlp.
 package player
 
 import (
@@ -10,11 +11,7 @@ import (
 	"os/exec"
 	"sync"
 	"time"
-
-	winio "github.com/Microsoft/go-winio"
 )
-
-const PipeName = `\\.\pipe\ytcli-mpv`
 
 type State struct {
 	Position int
@@ -43,10 +40,13 @@ type Player struct {
 }
 
 func New(mpvPath string) *Player {
-	return &Player{mpvPath: mpvPath, pipeName: PipeName, endCh: make(chan struct{}, 1), lostCh: make(chan struct{}, 1)}
+	return &Player{mpvPath: mpvPath, pipeName: defaultIPCName, endCh: make(chan struct{}, 1), lostCh: make(chan struct{}, 1)}
 }
 
 func (p *Player) Start() error {
+	if err := prepareIPC(p.pipeName); err != nil {
+		return fmt.Errorf("preparando el IPC de mpv: %w", err)
+	}
 	p.cmd = exec.Command(p.mpvPath,
 		"--no-video", "--idle=yes", "--no-terminal",
 		"--input-ipc-server="+p.pipeName,
@@ -58,9 +58,8 @@ func (p *Player) Start() error {
 
 	var conn net.Conn
 	var err error
-	for i := 0; i < 50; i++ { // mpv tarda un momento en crear el pipe
-		timeout := 500 * time.Millisecond
-		conn, err = winio.DialPipe(p.pipeName, &timeout)
+	for i := 0; i < 50; i++ { // mpv tarda un momento en crear el pipe/socket
+		conn, err = dialIPC(p.pipeName, 500*time.Millisecond)
 		if err == nil {
 			break
 		}

@@ -21,10 +21,11 @@ func TestResolveBinaryPreferPath(t *testing.T) {
 
 func TestResolveBinaryFallbackBinDir(t *testing.T) {
 	look := func(string) (string, error) { return "", errors.New("not found") }
-	exists := func(p string) bool { return strings.HasSuffix(p, `\bin\yt-dlp.exe`) }
-	got, ok := resolveBinary("yt-dlp", `C:\bin`, look, exists)
-	if !ok || !strings.HasSuffix(got, `\bin\yt-dlp.exe`) {
-		t.Fatalf("resolve = %q,%v; want bin dir path,true", got, ok)
+	want := filepath.Join("bin", exeName("yt-dlp"))
+	exists := func(p string) bool { return strings.HasSuffix(p, want) }
+	got, ok := resolveBinary("yt-dlp", "bin", look, exists)
+	if !ok || !strings.HasSuffix(got, want) {
+		t.Fatalf("resolve = %q,%v; want suffix %q,true", got, ok, want)
 	}
 }
 
