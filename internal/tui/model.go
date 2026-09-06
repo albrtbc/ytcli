@@ -84,7 +84,7 @@ type Model struct {
 	quit   bool
 
 	sizeKnown    bool // first WindowSizeMsg received
-	pendingClear bool // main screen rewrapped while in the alt screen
+	pendingClear bool // terminal resized while in the alt screen
 }
 
 func New(q *queue.Queue, p playerPort, yt searchPort, st storePort, vol int) Model {

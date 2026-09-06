@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -259,40 +260,68 @@ func TestFirstResizeDoesNotClearScreen(t *testing.T) {
 	}
 }
 
-func TestWidthChangeInCompactClearsScreen(t *testing.T) {
-	m, _, _ := newTestModel()
-	m2, _ := m.Update(size(120, 30))
-	m3, cmd := m2.(Model).Update(size(80, 30))
-	if cmd == nil {
-		t.Fatal("a width change in inline mode must trigger a full clear+repaint")
+func TestResizeInCompactClearsScreen(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		w, h int
+	}{
+		{"narrower", 80, 30},
+		{"wider", 160, 30},
+		{"shorter", 120, 14},
+		{"taller", 120, 50},
+		{"both", 80, 14},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _, _ := newTestModel()
+			m2, _ := m.Update(size(120, 30))
+			m3, cmd := m2.(Model).Update(size(tc.w, tc.h))
+			if cmd == nil || !reflect.DeepEqual(cmd(), tea.ClearScreen()) {
+				t.Fatal("resizing inline mode must clear the screen to remove stale rows")
+			}
+			if mm := m3.(Model); mm.width != tc.w || mm.height != tc.h {
+				t.Fatal("terminal dimensions not updated")
+			}
+		})
 	}
-	if m3.(Model).width != 80 {
-		t.Fatal("width not updated")
-	}
-	// Height-only change: no rewrap, no clear.
-	_, cmd = m3.(Model).Update(size(80, 20))
-	if cmd != nil {
-		t.Fatal("height-only changes must not clear the screen")
+}
+
+func TestUnchangedSizeDoesNotClearScreen(t *testing.T) {
+	for _, mode := range []mode{modeCompact, modeExpanded} {
+		m, _, _ := newTestModel()
+		m.mode = mode
+		m2, _ := m.Update(size(120, 30))
+		m3, cmd := m2.(Model).Update(size(120, 30))
+		if cmd != nil || m3.(Model).pendingClear {
+			t.Fatal("repeated dimensions must not request a screen clear")
+		}
 	}
 }
 
 func TestResizeWhileExpandedClearsMainScreenOnCollapse(t *testing.T) {
-	m, _, _ := newTestModel()
-	m2, _ := m.Update(size(120, 30))
-	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyTab}) // alt screen
-	m4, cmd := m3.(Model).Update(size(90, 30))
-	if cmd != nil {
-		t.Fatal("resize in alt screen needs no immediate clear (renderer repaints the alt buffer)")
-	}
-	if !m4.(Model).pendingClear {
-		t.Fatal("resize under the alt screen should mark the main buffer dirty")
-	}
-	m5, cmd := m4.(Model).Update(tea.KeyMsg{Type: tea.KeyTab}) // collapse
-	if cmd == nil {
-		t.Fatal("collapsing after a resize must exit alt screen and clear the rewrapped main buffer")
-	}
-	if m5.(Model).pendingClear {
-		t.Fatal("pendingClear should reset after the collapse")
+	for _, dimensions := range []tea.WindowSizeMsg{size(90, 30), size(120, 14), size(120, 50)} {
+		for _, help := range []bool{false, true} {
+			m, _, _ := newTestModel()
+			m2, _ := m.Update(size(120, 30))
+			open := tea.KeyMsg{Type: tea.KeyTab}
+			if help {
+				open = key('?')
+			}
+			m3, _ := m2.(Model).Update(open) // alt screen
+			m4, cmd := m3.(Model).Update(dimensions)
+			if cmd != nil {
+				t.Fatal("resize in alt screen needs no immediate clear (renderer repaints the alt buffer)")
+			}
+			if !m4.(Model).pendingClear {
+				t.Fatal("resize under the alt screen should mark the main buffer dirty")
+			}
+			m5, cmd := m4.(Model).Update(tea.KeyMsg{Type: tea.KeyTab}) // collapse
+			if cmd == nil {
+				t.Fatal("collapsing after a resize must exit alt screen and clear the main buffer")
+			}
+			if m5.(Model).pendingClear {
+				t.Fatal("pendingClear should reset after the collapse")
+			}
+		}
 	}
 }
 

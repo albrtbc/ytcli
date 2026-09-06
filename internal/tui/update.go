@@ -91,7 +91,7 @@ func (m *Model) setMode(newMode mode) tea.Cmd {
 	}
 	if m.pendingClear {
 		// The terminal was resized while in the alt screen: the main buffer
-		// content rewrapped, so redraw it from scratch after switching back.
+		// content may have rewrapped or scrolled, so redraw it after switching back.
 		m.pendingClear = false
 		return tea.Sequence(tea.ExitAltScreen, tea.ClearScreen)
 	}
@@ -169,20 +169,19 @@ func (m Model) toggleFavorite() (tea.Model, tea.Cmd) {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// On a width change the terminal rewraps the lines already on screen,
-		// so the inline renderer's cursor anchor (counted in logical lines) no
-		// longer matches physical rows and a plain repaint lands askew. A full
-		// clear re-anchors it. Height-only changes don't rewrap: no clear.
-		widthChanged := m.sizeKnown && msg.Width != m.width
+		// Width changes can rewrap lines; height changes can scroll or restore
+		// rows in tmux. Both can move the inline renderer's cursor anchor and
+		// leave stale copies of the player, so clear after either changes.
+		sizeChanged := m.sizeKnown && (msg.Width != m.width || msg.Height != m.height)
 		m.sizeKnown = true
 		m.width, m.height = msg.Width, msg.Height
-		if !widthChanged {
+		if !sizeChanged {
 			return m, nil
 		}
 		if m.mode == modeCompact {
 			return m, tea.ClearScreen
 		}
-		m.pendingClear = true // the main buffer rewrapped under the alt screen
+		m.pendingClear = true // redraw the main buffer when leaving the alt screen
 		return m, nil
 
 	case tickMsg:
